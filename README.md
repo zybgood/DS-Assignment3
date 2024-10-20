@@ -59,21 +59,3 @@ The `CouncilElection_Test` class serves as a testing harness to validate the fun
 
 3. **Testing Different Scenarios**
     - The `CouncilElection_Test` class provides comprehensive coverage for different scenarios, including no delays, random delays, and multiple simultaneous proposals. This helps ensure that the system behaves correctly under varying network conditions and proposer behaviors.
-
-### Potential Improvements
-
-1. **Dynamic Configuration**
-    - The current implementation uses hardcoded values for delays, member behaviors, and port numbers. These could be made configurable through a properties file or command-line arguments, making the system more flexible for different deployment environments.
-
-2. **Logging and Monitoring**
-    - The project could benefit from improved logging mechanisms to provide better insight into the election process, including which members responded, how many votes each candidate received, and when failures occurred.
-
-3. **More Robust Failure Handling**
-    - Currently, the system simulates failure scenarios using random events. A more sophisticated failure detection and recovery mechanism could be implemented, such as re-attempting to contact offline members or electing a new proposer if the current one fails.
-
-### Conclusion
-
-The Paxos Voting System for Council President Election demonstrates how consensus can be reached among distributed nodes, even in the presence of network failures, delays, and competing proposals. By using socket-based communication, random delays, and locking mechanisms, the project effectively simulates a real-world election process that is resilient to various failure modes.
-
-The accompanying test harness ensures that the implementation is robust and capable of handling a variety of scenarios, from immediate responses to complex failure conditions. This makes the project a valuable learning tool for understanding distributed consensus algorithms and their application in real-world settings.
-
