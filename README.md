@@ -59,3 +59,56 @@ The `CouncilElection_Test` class serves as a testing harness to validate the fun
 
 3. **Testing Different Scenarios**
     - The `CouncilElection_Test` class provides comprehensive coverage for different scenarios, including no delays, random delays, and multiple simultaneous proposals. This helps ensure that the system behaves correctly under varying network conditions and proposer behaviors.
+      Expected Output and Explanation
+
+### Expected Output and Explanation
+
+The expected output for different test scenarios is as follows:
+
+1. **Immediate Response Test**
+   - **Expected Output**: All members respond immediately to the proposal, and the proposer collects all 9 votes without any delay. The output will show that each member has received the proposal and responded promptly. If M1 is the proposer, the output might look like:
+     ```
+     Running test: Immediate Response Mode
+     Received response from M1: Vote for M1
+     Received response from M2: Vote for M2
+     Received response from M3: Vote for M3
+     Received response from M4: Vote for M1
+     Received response from M5: Vote for M2
+     ...
+     Votes for M1: 4
+     Votes for M2: 3
+     Votes for M3: 2
+     No candidate received the majority. No one is elected as President.
+     ```
+   - **Explanation**: This test verifies that the system can handle immediate responses from all members. It helps validate the basic communication flow without any delays or failures.
+
+2. **Random Delays and Failures Test**
+   - **Expected Output**: Members may respond after a delay, fail to respond, or go offline. The output will show varying response times, dropped messages, and members going offline. For example:
+     ```
+     Running test: Random Delays and Failures
+     Member M2 went offline.
+     Received response from M1: Vote for M1
+     Member M3 did not respond (message dropped).
+     Received response from M4: Vote for M2
+     ...
+     Votes for M1: 3
+     Votes for M2: 4
+     Votes for M3: 1
+     No candidate received the majority. No one is elected as President.
+     ```
+   - **Explanation**: This test ensures that the system remains functional even when members are delayed or fail. It demonstrates the resilience of the voting process under real-world conditions where network reliability is not guaranteed.
+
+3. **Simultaneous Proposers Test**
+   - **Expected Output**: Multiple proposers attempt to start the election simultaneously, but only one succeeds in obtaining the lock. The output will show that only one proposer proceeds while others are blocked. For example:
+     ```
+     Running test: Multiple Proposers Simultaneously
+     M1 tried to propose but M3 is already in progress.
+     M2 tried to propose but M3 is already in progress.
+     Received response from M1: Vote for M3
+     Received response from M2: Vote for M3
+     ...
+     Votes for M3: 6
+     M3 is elected as President.
+     ```
+   - **Explanation**: This test verifies the consensus mechanism by ensuring that only one proposal can proceed at a time, simulating how Paxos avoids conflicts in distributed environments.
+nsuring that only one proposal can proceed at a time, simulating how Paxos avoids conflicts in distributed environments.
