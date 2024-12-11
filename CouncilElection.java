@@ -1,177 +1,189 @@
 import java.io.*;
 import java.net.*;
-import java.util.Random;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.logging.*;
 
 public class CouncilElection {
-    private static final ReentrantLock lock = new ReentrantLock();
-    private static String currentProposal = null; // Track current proposal to handle conflicts
-    static boolean immediateResponseMode = false; // Flag to control immediate response mode
+    private static final Logger logger = Logger.getLogger(CouncilElection.class.getName());
+    static final ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(10);
+    static final Map<Integer, Boolean> memberOnlineStatus = new ConcurrentHashMap<>();
 
-     /**
-     * The main method initializes the system by setting up the immediate response mode and starting the acceptor threads for each council member.
-     * It also simulates multiple proposers running simultaneously after a short delay.
-     *
-     * @param args Command line arguments (not used in this method)
-     */
+    private static final int BASE_PORT = 5000;
+    private static final int TOTAL_MEMBERS = 9;
+    private static final int MAJORITY = TOTAL_MEMBERS / 2 + 1;
+
     public static void main(String[] args) {
-        // Set immediate response mode to true or false
-        immediateResponseMode = false; // Set to true for all members to respond immediately
+        logger.info("Starting Council Election...");
+        initializeMembers();
 
-        // Start acceptor threads for each council member (M1-M9)
-        for (int i = 1; i <= 9; i++) {
+        // 启动接收器线程
+        for (int i = 1; i <= TOTAL_MEMBERS; i++) {
             int memberId = i;
-            new Thread(() -> runAcceptor(memberId)).start();
+            threadPool.submit(() -> runAcceptor(memberId));
         }
 
-        // Run multiple proposers after a short delay to simulate simultaneous proposals
-        try {
-            Thread.sleep(1000); // Wait for 1 second before starting the proposers
-            new Thread(() -> runProposer("M1")).start(); // Start proposer M1
-            new Thread(() -> runProposer("M2")).start(); // Start proposer M2
-            new Thread(() -> runProposer("M3")).start(); // Start proposer M3
-        } catch (InterruptedException e) {
-            e.printStackTrace(); // Print stack trace if interrupted
+        // 等待所有接收器线程完全启动
+        synchronized (memberOnlineStatus) {
+            while (memberOnlineStatus.values().stream().filter(v -> v).count() < TOTAL_MEMBERS) {
+                try {
+                    memberOnlineStatus.wait();
+                } catch (InterruptedException e) {
+                    logger.warning("Waiting interrupted: " + e.getMessage());
+                }
+            }
         }
+
+        // 启动提案者线程
+        threadPool.schedule(() -> runProposer("M1"), 1, TimeUnit.SECONDS);
+        threadPool.schedule(() -> runProposer("M2"), 2, TimeUnit.SECONDS);
+        threadPool.schedule(() -> runProposer("M3"), 3, TimeUnit.SECONDS);
+
+        addShutdownHook();
     }
 
 
-     /**
-     * Starts an acceptor for a specific member.
-     * Each member listens on a different port (5000 + memberId) to receive and respond to proposals.
-     * The behavior of different members varies, simulating different council members' decision-making processes.
-     *
-     * @param memberId The ID of the member, used to determine the port number and simulate behavior.
-     */
+    static void initializeMembers() {
+        for (int i = 1; i <= TOTAL_MEMBERS; i++) {
+            memberOnlineStatus.put(i, true);
+        }
+    }
+
+    private static void addShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            threadPool.shutdown();
+            try {
+                if (!threadPool.awaitTermination(5, TimeUnit.SECONDS)) {
+                    threadPool.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                threadPool.shutdownNow();
+            }
+        }));
+    }
+
     public static void runAcceptor(int memberId) {
-        try (ServerSocket serverSocket = new ServerSocket(5000 + memberId)) {
-            System.out.println("Member M" + memberId + " is ready.");
+        try (ServerSocket serverSocket = new ServerSocket(BASE_PORT + memberId)) {
+            logger.info("Member M" + memberId + " is ready on port " + (BASE_PORT + memberId));
+            synchronized (CouncilElection.memberOnlineStatus) {
+                CouncilElection.memberOnlineStatus.put(memberId, true); // 确认接收器已启动
+                CouncilElection.memberOnlineStatus.notifyAll(); // 通知其他线程
+            }
             while (true) {
                 try (Socket socket = serverSocket.accept();
                      BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                      PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
 
-                    String proposal = in.readLine();
-                    System.out.println("Member M" + memberId + " received proposal: " + proposal);
+                    // 模拟行为和消息处理逻辑
+                    MemberBehaviorSimulator.simulateBehavior(memberId, false);
 
-                    if (!immediateResponseMode) {
-                        // Simulate behavior of different council members
-                        if (memberId == 2) {
-                            // M2: Delayed response
-                            Thread.sleep(new Random().nextInt(4000) + 1000); // 1-5 seconds delay
-                        } else if (memberId == 3) {
-                            // M3: Randomly drop messages
-                            if (new Random().nextBoolean()) {
-                                System.out.println("Member M" + memberId + " did not respond (message dropped).");
-                                continue;
-                            }
-                        } else if (memberId >= 4 && memberId <= 9) {
-                            // M4-M9: Random delay
-                            Thread.sleep(new Random().nextInt(3000)); // 0-3 seconds delay
-                        }
-
-                        // Randomly simulate going offline (for all members)
-                        if (new Random().nextInt(10) < 2) {
-                            System.out.println("Member M" + memberId + " went offline.");
-                            out.println("offline");
-                            continue;
-                        }
-                    }
-
-                    // Vote for a candidate
-                    String response;
-                    if (memberId <= 3 && proposal.contains(memberId + "")) {
-                        // M1, M2, M3 vote for themselves
-                        response = "Vote for M" + memberId;
-                    } else {
-                        // Other members vote fairly among M1, M2, M3
-                        int candidate = new Random().nextInt(3) + 1;
-                        response = "Vote for M" + candidate;
-                    }
-
-                    out.println(response);
-                    System.out.println("Member M" + memberId + " responded: " + response);
-                } catch (IOException | InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        } catch (IOException e) {
-            System.err.println("Could not start server for Member M" + memberId);
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Initiates the proposer process for electing a council president.
-     * This method simulates the process of a proposer initiating an election for council president among members.
-     *
-     * @param proposerId The unique identifier of the proposer, used to identify the proposer.
-     */
-    public static void runProposer(String proposerId) {
-        // Lock to prevent multiple simultaneous proposals from succeeding
-        lock.lock();
-        try {
-            // Initialize the proposal content
-            currentProposal = "Council President Election by " + proposerId;
-
-            // Initialize the vote counts for each candidate
-            int votesForM1 = 0;
-            int votesForM2 = 0;
-            int votesForM3 = 0;
-
-            // Iterate through members M1 to M9, attempting to communicate and obtain votes
-            for (int i = 1; i <= 9; i++) {
-                try (Socket socket = new Socket("localhost", 5000 + i);
-                     PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                     BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
-
-                    // Send the proposal content to member Mi
-                    out.println(currentProposal);
-                    // Read the response from member Mi
-                    String response = in.readLine();
-                    System.out.println("Received response from M" + i + ": " + response);
-
-                    // If member Mi does not respond or is offline, skip to the next member
-                    if (response == null || response.equals("offline")) {
-                        System.out.println("Member M" + i + " is offline or did not respond.");
+                    if (!memberOnlineStatus.get(memberId)) {
+                        logger.info("Member M" + memberId + " is offline and cannot process requests.");
+                        out.println("offline");
                         continue;
                     }
 
-                    // Count votes based on the response
-                    if (response.contains("M1")) {
-                        votesForM1++;
-                    } else if (response.contains("M2")) {
-                        votesForM2++;
-                    } else if (response.contains("M3")) {
-                        votesForM3++;
-                    }
+                    String receivedMessage = in.readLine();
+                    String[] request = receivedMessage.split(":");
+                    String command = request[0];
+                    int proposalNumber = Integer.parseInt(request[1]);
+                    String proposalValue = request.length > 2 ? request[2] : "";
 
-                } catch (IOException e) {
-                    // Handle exceptions when communicating with member Mi
-                    System.out.println("Error contacting M" + i + ": " + e.getMessage());
+                    if (command.equals("PREPARE")) {
+                        out.println("PROMISE:" + proposalNumber + ":Accepted");
+                    } else if (command.equals("ACCEPT")) {
+                        out.println("YES");
+                    }
+                } catch (IOException | InterruptedException e) {
+                    logger.warning("Error in Member M" + memberId + ": " + e.getMessage());
                 }
             }
+        } catch (IOException e) {
+            logger.severe("Failed to start server for Member M" + memberId + " on port " + (BASE_PORT + memberId));
+        }
+    }
 
-            // Determine the result of the election
-            System.out.println("Votes for M1: " + votesForM1);
-            System.out.println("Votes for M2: " + votesForM2);
-            System.out.println("Votes for M3: " + votesForM3);
+    public static void runProposer(String proposerId) {
+        int yesVotes = 0;
+        int noVotes = 0;
+        int proposalNumber = new Random().nextInt(1000);
+        String proposalValue = "Council President Election by " + proposerId;
 
-            // Based on the number of votes, decide if a candidate is elected as president
-            if (votesForM1 > 4) {
-                System.out.println("M1 is elected as President.");
-            } else if (votesForM2 > 4) {
-                System.out.println("M2 is elected as President.");
-            } else if (votesForM3 > 4) {
-                System.out.println("M3 is elected as President.");
-            } else {
-                System.out.println("No candidate received the majority. No one is elected as President.");
+        List<String> promises = new ArrayList<>();
+
+        for (int i = 1; i <= TOTAL_MEMBERS; i++) {
+            if (!memberOnlineStatus.get(i)) {
+                logger.info("Member M" + i + " is offline and will not participate.");
+                continue;
             }
+            try {
+                PaxosNetworkHandler.sendPrepareRequest(i, proposalNumber, promises);
+            } catch (IOException e) {
+                logger.warning("Failed to communicate with Member M" + i + ": " + e.getMessage());
+            }
+        }
 
-        } finally {
-            // Reset the proposal content and unlock after the proposal is done
-            currentProposal = null;
-            lock.unlock();
+        if (promises.size() >= MAJORITY) {
+            logger.info("Proposal by " + proposerId + " has majority promises.");
+            for (int i = 1; i <= TOTAL_MEMBERS; i++) {
+                if (!memberOnlineStatus.get(i)) continue;
+                try {
+                    boolean accepted = PaxosNetworkHandler.sendAcceptRequest(i, proposalNumber, proposalValue);
+                    if (accepted) yesVotes++;
+                    else noVotes++;
+                } catch (IOException e) {
+                    logger.warning("Failed to communicate with Member M" + i + ": " + e.getMessage());
+                }
+            }
+        }
+
+        logger.info("YES votes: " + yesVotes);
+        logger.info("NO votes: " + noVotes);
+        if (yesVotes >= MAJORITY) {
+            logger.info("Proposal by " + proposerId + " is successfully elected.");
+        } else {
+            logger.info("Proposal by " + proposerId + " is rejected.");
+        }
+    }
+}
+
+class MemberBehaviorSimulator {
+    public static void simulateBehavior(int memberId, boolean immediateMode) throws InterruptedException {
+        if (!immediateMode) {
+            if (memberId == 2) {
+                Thread.sleep(new Random().nextInt(4000) + 1000);
+            } else if (memberId == 3 && new Random().nextBoolean()) {
+                CouncilElection.memberOnlineStatus.put(memberId, false);
+                return;
+            } else if (memberId > 3 && new Random().nextInt(10) < 1) {
+                CouncilElection.memberOnlineStatus.put(memberId, false);
+            }
+        }
+    }
+}
+
+class PaxosNetworkHandler {
+    private static final Logger logger = Logger.getLogger(PaxosNetworkHandler.class.getName());
+
+    public static void sendPrepareRequest(int memberId, int proposalNumber, List<String> promises) throws IOException {
+        try (Socket socket = new Socket("localhost", 5000 + memberId);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+            out.println("PREPARE:" + proposalNumber);
+            String response = in.readLine();
+            if (response != null && response.startsWith("PROMISE")) {
+                promises.add(response);
+            }
+        }
+    }
+
+    public static boolean sendAcceptRequest(int memberId, int proposalNumber, String proposalValue) throws IOException {
+        try (Socket socket = new Socket("localhost", 5000 + memberId);
+             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+            out.println("ACCEPT:" + proposalNumber + ":" + proposalValue);
+            String response = in.readLine();
+            return "YES".equals(response);
         }
     }
 }

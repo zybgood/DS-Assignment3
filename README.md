@@ -1,114 +1,105 @@
-## Assignment 3
-### Zhao Yanbo a1950939
-### Paxos Voting System for Council President Election
+# Assignment 3
 
-This assignment is designed to implement a Paxos-style voting protocol to facilitate the election of a council president for the Adelaide Suburbs Council. The system demonstrates how consensus can be reached among distributed nodes (council members) in an environment where communication failures, delays, and simultaneous proposals are possible. The election involves nine council members (M1 to M9), with specific behavior modeled for each member to simulate real-world communication challenges.
+---
 
-### Components and Workflow
+## Code Components
 
-#### 1. **CouncilElection Class**
+### 1. **Main Election System (CouncilElection.java)**
+#### Responsibilities:
+- **Proposers**: Initiate proposals for a council president.
+- **Acceptors**: Process proposals and respond based on Paxos protocol logic.
+- **Thread Pool**: Manages concurrent threads for proposers and acceptors.
+- **Logging**: Logs system activity for monitoring and debugging.
 
-This is the core implementation of the Paxos voting system. It models the behavior of nine council members who are eligible to participate in the election for the council president. The class uses socket-based communication to simulate network-based message exchange between members. The key functionalities include:
+#### Key Methods:
+- **`runAcceptor(int memberId)`**: Starts an acceptor server for a council member, listens for proposals, and responds based on Paxos logic.
+- **`runProposer(String proposerId)`**: Starts a proposer that sends prepare and accept requests to all acceptors.
+- **`initializeMembers()`**: Initializes the online status of all members.
+- **`addShutdownHook()`**: Ensures graceful shutdown of thread pool resources.
 
-- **Proposers and Acceptors**: A proposer is a member who starts the election process by sending a proposal for a candidate to all the other members (acceptors). Any of M1, M2, or M3 can act as a proposer.
+### 2. **Behavior Simulation (MemberBehaviorSimulator.java)**
+#### Responsibilities:
+- Simulates various behaviors for council members, such as:
+    - Delayed responses.
+    - Going offline intermittently.
 
-- **Server and Client Communication**: Each council member is represented by a server that listens on a specific port, and proposers act as clients that connect to these servers to send their proposals.
+#### Key Method:
+- **`simulateBehavior(int memberId, boolean immediateMode)`**: Applies delays or marks members offline based on random factors.
 
-- **Randomized Member Behavior**: Different members exhibit different response behaviors, such as delayed responses, dropped messages, or going offline. For example:
-    - M1, M2, and M3 act as candidates who always vote for themselves.
-    - Members M4 to M9 vote randomly among the candidates (M1, M2, M3) and may introduce random delays or fail to respond.
+### 3. **Network Handler (PaxosNetworkHandler.java)**
+#### Responsibilities:
+- Facilitates communication between proposers and acceptors.
+- Handles network operations like sending and receiving requests over sockets.
 
-- **Immediate Response Mode**: The implementation also includes an "immediate response mode" that can be toggled to ensure all members respond without delay, which is useful for testing scenarios where consensus needs to be achieved quickly.
+#### Key Methods:
+- **`sendPrepareRequest(int memberId, int proposalNumber, List<String> promises)`**: Sends prepare requests to acceptors.
+- **`sendAcceptRequest(int memberId, int proposalNumber, String proposalValue)`**: Sends accept requests to acceptors.
 
-- **Paxos Consensus Mechanism**: The project uses a `ReentrantLock` to ensure that only one proposer can run at a time, preventing simultaneous proposals from causing inconsistencies in the election process. This lock simulates the consensus feature of Paxos, ensuring that only one proposal is adopted.
+### 4. **Testing Suite (CouncilElection_Test.java)**
+#### Responsibilities:
+- Validates the functionality of the election system under various scenarios.
+- Logs results for analysis and debugging.
 
-#### 2. **CouncilElection_Test Class**
+#### Key Methods:
+- **`initializeSystem()`**: Ensures that all acceptors are initialized before testing begins.
+- **`runAllTests()`**: Executes all predefined test cases.
+- **Test Cases**:
+    1. **All Members Respond Immediately**: Tests the basic functionality with no delays or offline members.
+    2. **Simulating Member Delays**: Tests the system's handling of delayed responses.
+    3. **Member Offline During Proposal**: Verifies fault tolerance when members go offline mid-process.
+    4. **Concurrent Proposals**: Simulates simultaneous proposals to test conflict resolution.
+    5. **Failure to Reach Majority**: Ensures that proposals fail correctly if a majority is not achieved.
 
-The `CouncilElection_Test` class serves as a testing harness to validate the functionality of the voting system under various scenarios. The test cases simulate different conditions to ensure the robustness of the system, including:
+---
 
-- **Immediate Response Test**: This scenario sets all members to respond immediately to verify that consensus can be achieved when there are no delays or failures in the network.
+## Implementation Highlights
+1. **Paxos Consensus Protocol**:
+    - Prepare phase: Acceptors respond to proposers with promises to not accept lower-numbered proposals.
+    - Accept phase: Acceptors accept proposals if they have not already promised a higher-numbered one.
+2. **Fault Tolerance**:
+    - Handles member delays and offline scenarios.
+    - Concurrent proposals are managed through proposal numbers.
+3. **Logging**:
+    - Enhanced with English timestamps for easier debugging and traceability.
 
-- **Random Delays and Failures Test**: This scenario allows for random response delays and dropped messages, especially among members M2 and M3, who are prone to going offline or experiencing network issues. This test ensures that the voting system is resilient to these types of failures.
+---
 
-- **Simultaneous Proposers Test**: This test creates multiple proposers (M1, M2, M3) attempting to start an election simultaneously. The `ReentrantLock` is used to manage this conflict and ensure that only one proposal is ultimately considered, while others are either blocked or rejected.
+## Testing Framework
 
-### Detailed Flow of Election Process
+### Objectives:
+1. Validate core functionalities under ideal and adverse conditions.
+2. Ensure robustness and fault tolerance.
 
-1. **Initialization**
-    - The project starts by initializing server sockets for each council member (M1 to M9). Each member runs on a separate thread, listening for incoming proposals.
-    - The proposer threads (M1, M2, M3) are also initialized, and they attempt to start an election by sending proposals to all council members.
+### Test Cases:
 
-2. **Proposal Phase**
-    - When a proposer sends a proposal, all acceptors (M1 to M9) receive the proposal. Based on the member's behavior, they may respond immediately, delay the response, or drop the message entirely.
-    - Each proposer collects responses from the members and counts the votes received. Members M1, M2, and M3 vote for themselves, while others vote randomly among the candidates.
+| Test Case                       | Description                                                                                         | Expected Outcome                                                                 |
+|---------------------------------|-----------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------|
+| All Members Respond Immediately | Ensures that all members process proposals correctly without delays or offline states.             | Proposals succeed with majority votes.                                          |
+| Simulating Member Delays        | Introduces random delays to test if proposers wait appropriately and collect votes.                | Proposals succeed as long as a majority is eventually reached.                 |
+| Member Offline During Proposal  | Tests the system when members go offline after the process begins.                                 | Proposals succeed if the majority is maintained.                                |
+| Concurrent Proposals            | Simulates two proposers sending proposals at the same time to test conflict resolution.            | Only the proposal with the higher number succeeds.                              |
+| Failure to Reach Majority       | Tests a scenario where not enough members are online to reach a majority.                         | Proposals fail as the majority cannot be reached.                               |
 
-3. **Conflict Resolution**
-    - To simulate the consensus nature of Paxos, the `ReentrantLock` ensures that only one proposal can proceed at a time. If multiple proposers attempt to start an election simultaneously, only one will obtain the lock and proceed, while others will be blocked until the current election concludes.
+---
 
-4. **Voting Outcome**
-    - After collecting the votes, the proposer determines whether any candidate has received a majority (i.e., more than half the votes, or at least 5 out of 9). If a candidate achieves a majority, they are declared the winner.
-    - If no candidate receives the majority, the outcome is that no one is elected, and a new election must be conducted.
+## Execution Instructions
+1. **Compile the Code**:
+   ```
+   javac *.java
+   ```
+2. **Run the Election System**:
+   ```
+   java CouncilElection
+   ```
+3. **Run the Testing Suite**:
+   ```
+   java CouncilElection_Test
+   ```
+4. **Analyze Logs**:
+    - Logs are displayed on the console with timestamps and detailed information about each action.
 
-### Key Features and Challenges Addressed
+---
 
-1. **Fault Tolerance**
-    - The system is designed to handle scenarios where members fail to respond or go offline. This is crucial for distributed systems, where network failures and node outages are common.
+## Conclusion
+This assignment demonstrates a robust implementation of the Paxos protocol, capable of handling various failure scenarios in a distributed environment. The comprehensive testing framework ensures that the system behaves as expected under diverse conditions.
 
-2. **Consensus in Distributed Systems**
-    - The use of `ReentrantLock` helps simulate a Paxos-like consensus, ensuring that only one proposal is adopted at a time, thereby avoiding conflicts and achieving consistency in a distributed environment.
-
-3. **Testing Different Scenarios**
-    - The `CouncilElection_Test` class provides comprehensive coverage for different scenarios, including no delays, random delays, and multiple simultaneous proposals. This helps ensure that the system behaves correctly under varying network conditions and proposer behaviors.
-      Expected Output and Explanation
-
-### Expected Output and Explanation
-
-The expected output for different test scenarios is as follows:
-
-1. **Immediate Response Test**
-   - **Expected Output**: All members respond immediately to the proposal, and the proposer collects all 9 votes without any delay. The output will show that each member has received the proposal and responded promptly. If M1 is the proposer, the output might look like:
-     ```
-     Running test: Immediate Response Mode
-     Received response from M1: Vote for M1
-     Received response from M2: Vote for M2
-     Received response from M3: Vote for M3
-     Received response from M4: Vote for M1
-     Received response from M5: Vote for M2
-     ...
-     Votes for M1: 4
-     Votes for M2: 3
-     Votes for M3: 2
-     No candidate received the majority. No one is elected as President.
-     ```
-   - **Explanation**: This test verifies that the system can handle immediate responses from all members. It helps validate the basic communication flow without any delays or failures.
-
-2. **Random Delays and Failures Test**
-   - **Expected Output**: Members may respond after a delay, fail to respond, or go offline. The output will show varying response times, dropped messages, and members going offline. For example:
-     ```
-     Running test: Random Delays and Failures
-     Member M2 went offline.
-     Received response from M1: Vote for M1
-     Member M3 did not respond (message dropped).
-     Received response from M4: Vote for M2
-     ...
-     Votes for M1: 3
-     Votes for M2: 4
-     Votes for M3: 1
-     No candidate received the majority. No one is elected as President.
-     ```
-   - **Explanation**: This test ensures that the system remains functional even when members are delayed or fail. It demonstrates the resilience of the voting process under real-world conditions where network reliability is not guaranteed.
-
-3. **Simultaneous Proposers Test**
-   - **Expected Output**: Multiple proposers attempt to start the election simultaneously, but only one succeeds in obtaining the lock. The output will show that only one proposer proceeds while others are blocked. For example:
-     ```
-     Running test: Multiple Proposers Simultaneously
-     M1 tried to propose but M3 is already in progress.
-     M2 tried to propose but M3 is already in progress.
-     Received response from M1: Vote for M3
-     Received response from M2: Vote for M3
-     ...
-     Votes for M3: 6
-     M3 is elected as President.
-     ```
-   - **Explanation**: This test verifies the consensus mechanism by ensuring that only one proposal can proceed at a time, simulating how Paxos avoids conflicts in distributed environments.
-nsuring that only one proposal can proceed at a time, simulating how Paxos avoids conflicts in distributed environments.

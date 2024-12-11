@@ -1,69 +1,106 @@
 import java.io.*;
 import java.net.*;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.logging.*;
 
 public class CouncilElection_Test {
+    private static final Logger logger = Logger.getLogger(CouncilElection_Test.class.getName());
+
     public static void main(String[] args) {
-        // Initialize the thread pool for concurrent testing
-        ExecutorService executor = Executors.newFixedThreadPool(12);
+        logger.setUseParentHandlers(false);
+        ConsoleHandler handler = new ConsoleHandler();
+        handler.setFormatter(new SimpleFormatter() {
+            @Override
+            public String format(LogRecord record) {
+                SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                String timestamp = dateFormat.format(new Date(record.getMillis()));
+                return timestamp + " " + record.getLevel() + ": " + record.getMessage() + "\n";
+            }
+        });
+        logger.addHandler(handler);
 
-        // Run all test scenarios
-        executor.execute(() -> testImmediateResponseMode());
-        executor.execute(() -> testRandomDelaysAndFailures());
-        executor.execute(() -> testMultipleProposersSimultaneously());
+        logger.info("Starting Tests for Council Election...");
 
-        executor.shutdown();
+        // Ensure system initialization
+        initializeSystem();
+
+        // Run all tests
+        runAllTests();
     }
 
-    // Test scenario: All members respond immediately
-    public static void testImmediateResponseMode() {
-        System.out.println("Running test: Immediate Response Mode");
-        CouncilElection.immediateResponseMode = true;
-        new Thread(() -> CouncilElection.runProposer("M1")).start();
+    private static void runAllTests() {
+        testAllMembersRespondImmediately();
+        testDelayedResponses();
+        testOfflineMemberDuringProposal();
+        testConcurrentProposals();
+        testFailureToReachMajority();
+    }
+
+    private static void testAllMembersRespondImmediately() {
+        logger.info("Test 1: All members respond immediately.");
+        CouncilElection.initializeMembers();
+        CouncilElection.memberOnlineStatus.replaceAll((k, v) -> true);
+        CouncilElection.runProposer("M1");
+    }
+
+    private static void testDelayedResponses() {
+        logger.info("Test 2: Simulating member delays.");
+        CouncilElection.initializeMembers();
+        CouncilElection.memberOnlineStatus.replaceAll((k, v) -> true);
+
+        // Simulate delays for specific members
         try {
-            Thread.sleep(2000); // Wait for election to complete
+            MemberBehaviorSimulator.simulateBehavior(2, false);
+            MemberBehaviorSimulator.simulateBehavior(3, false);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            logger.warning("Simulation interrupted during delays test: " + e.getMessage());
         }
-        CouncilElection.immediateResponseMode = false;
+
+        CouncilElection.runProposer("M2");
     }
 
-    // Test scenario: Random delays and offline members
-    public static void testRandomDelaysAndFailures() {
-        System.out.println("Running test: Random Delays and Failures");
-        CouncilElection.immediateResponseMode = false;
-        new Thread(() -> CouncilElection.runProposer("M2")).start();
-        try {
-            Thread.sleep(5000); // Wait for election to complete
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+    private static void testOfflineMemberDuringProposal() {
+        logger.info("Test 3: Member goes offline mid-proposal.");
+        CouncilElection.initializeMembers();
+        CouncilElection.memberOnlineStatus.put(3, false);
+        CouncilElection.runProposer("M3");
+    }
+
+    private static void testConcurrentProposals() {
+        logger.info("Test 4: Concurrent proposals.");
+        CouncilElection.initializeMembers();
+        CouncilElection.threadPool.submit(() -> CouncilElection.runProposer("Concurrent-M1"));
+        CouncilElection.threadPool.submit(() -> CouncilElection.runProposer("Concurrent-M2"));
+    }
+
+    private static void testFailureToReachMajority() {
+        logger.info("Test 5: Failure to reach a majority.");
+        CouncilElection.initializeMembers();
+
+        // Simulate only part of members responding
+        CouncilElection.memberOnlineStatus.replaceAll((k, v) -> k <= 4); // Only first four members are online
+
+        CouncilElection.runProposer("M4");
+    }
+
+    private static void initializeSystem() {
+        CouncilElection.initializeMembers();
+        for (int i = 1; i <= 9; i++) {
+            int memberId = i;
+            CouncilElection.threadPool.submit(() -> CouncilElection.runAcceptor(memberId));
         }
-    }
 
-    // Test scenario: Multiple proposers attempting simultaneous elections
-    public static void testMultipleProposersSimultaneously() {
-        System.out.println("Running test: Multiple Proposers Simultaneously");
-        CouncilElection.immediateResponseMode = false;
-        new Thread(() -> CouncilElection.runProposer("M1")).start();
-        new Thread(() -> CouncilElection.runProposer("M3")).start();
-        new Thread(() -> CouncilElection.runProposer("M2")).start();
-        try {
-            Thread.sleep(5000); // Wait for election to complete
-        } catch (InterruptedException e) {
-            e.printStackTrace();
+        // Wait for all servers to initialize
+        synchronized (CouncilElection.memberOnlineStatus) {
+            while (CouncilElection.memberOnlineStatus.values().stream().filter(v -> v).count() < 9) {
+                try {
+                    CouncilElection.memberOnlineStatus.wait();
+                } catch (InterruptedException e) {
+                    logger.warning("Initialization delay interrupted: " + e.getMessage());
+                }
+            }
         }
     }
 }
-
-// Explanation:
-// - The test code creates a separate thread pool to run each test scenario concurrently.
-// - "testImmediateResponseMode": Ensures all members respond without delay, testing immediate consensus.
-// - "testRandomDelaysAndFailures": Simulates random delays, dropouts, and offline behavior among members.
-// - "testMultipleProposersSimultaneously": Tests if multiple proposers can handle conflicts and if only one proposal succeeds.
-// - Each test waits for some time to allow the election process to complete.
-// - ExecutorService is used to manage threads for testing concurrency issues.
-
-// Note: This testing harness assumes that the CouncilElection class is capable of managing its own state appropriately,
-// and that its main methods (e.g., runProposer and runAcceptor) can be safely called from different threads.
-// Also, the server threads (acceptors) should be already running before the test cases are executed.
