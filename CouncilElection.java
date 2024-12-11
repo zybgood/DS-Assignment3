@@ -5,25 +5,32 @@ import java.util.concurrent.*;
 import java.util.logging.*;
 
 public class CouncilElection {
+    // Logger for logging information and warnings
     private static final Logger logger = Logger.getLogger(CouncilElection.class.getName());
+    // Thread pool for managing concurrent tasks
     static final ScheduledExecutorService threadPool = Executors.newScheduledThreadPool(10);
+    // Map to track the online status of each member
     static final Map<Integer, Boolean> memberOnlineStatus = new ConcurrentHashMap<>();
 
+    // Base port number for member servers
     private static final int BASE_PORT = 5000;
+    // Total number of members in the council
     private static final int TOTAL_MEMBERS = 9;
+    // Majority required for a proposal to be accepted
     private static final int MAJORITY = TOTAL_MEMBERS / 2 + 1;
 
     public static void main(String[] args) {
         logger.info("Starting Council Election...");
+        // Initialize the online status of all members
         initializeMembers();
 
-        // 启动接收器线程
+        // Start acceptor threads for each member
         for (int i = 1; i <= TOTAL_MEMBERS; i++) {
             int memberId = i;
             threadPool.submit(() -> runAcceptor(memberId));
         }
 
-        // 等待所有接收器线程完全启动
+        // Wait for all acceptor threads to start
         synchronized (memberOnlineStatus) {
             while (memberOnlineStatus.values().stream().filter(v -> v).count() < TOTAL_MEMBERS) {
                 try {
@@ -34,21 +41,23 @@ public class CouncilElection {
             }
         }
 
-        // 启动提案者线程
+        // Schedule proposer threads to propose after some delay
         threadPool.schedule(() -> runProposer("M1"), 1, TimeUnit.SECONDS);
         threadPool.schedule(() -> runProposer("M2"), 2, TimeUnit.SECONDS);
         threadPool.schedule(() -> runProposer("M3"), 3, TimeUnit.SECONDS);
 
+        // Add shutdown hook to cleanly terminate the thread pool
         addShutdownHook();
     }
 
-
+    // Initialize the online status of all members to true
     static void initializeMembers() {
         for (int i = 1; i <= TOTAL_MEMBERS; i++) {
             memberOnlineStatus.put(i, true);
         }
     }
 
+    // Add a shutdown hook to ensure proper termination of the thread pool
     private static void addShutdownHook() {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             threadPool.shutdown();
@@ -62,19 +71,20 @@ public class CouncilElection {
         }));
     }
 
+    // Run the acceptor logic for a specific member
     public static void runAcceptor(int memberId) {
         try (ServerSocket serverSocket = new ServerSocket(BASE_PORT + memberId)) {
             logger.info("Member M" + memberId + " is ready on port " + (BASE_PORT + memberId));
             synchronized (CouncilElection.memberOnlineStatus) {
-                CouncilElection.memberOnlineStatus.put(memberId, true); // 确认接收器已启动
-                CouncilElection.memberOnlineStatus.notifyAll(); // 通知其他线程
+                CouncilElection.memberOnlineStatus.put(memberId, true); // Mark member as online
+                CouncilElection.memberOnlineStatus.notifyAll(); // Notify other threads
             }
             while (true) {
                 try (Socket socket = serverSocket.accept();
                      BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                      PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
 
-                    // 模拟行为和消息处理逻辑
+                    // Simulate behavior and handle messages
                     MemberBehaviorSimulator.simulateBehavior(memberId, false);
 
                     if (!memberOnlineStatus.get(memberId)) {
@@ -103,6 +113,7 @@ public class CouncilElection {
         }
     }
 
+    // Run the proposer logic for a specific proposer
     public static void runProposer(String proposerId) {
         int yesVotes = 0;
         int noVotes = 0;
@@ -111,6 +122,7 @@ public class CouncilElection {
 
         List<String> promises = new ArrayList<>();
 
+        // Send prepare requests to all members
         for (int i = 1; i <= TOTAL_MEMBERS; i++) {
             if (!memberOnlineStatus.get(i)) {
                 logger.info("Member M" + i + " is offline and will not participate.");
@@ -123,6 +135,7 @@ public class CouncilElection {
             }
         }
 
+        // If majority promises are received, send accept requests
         if (promises.size() >= MAJORITY) {
             logger.info("Proposal by " + proposerId + " has majority promises.");
             for (int i = 1; i <= TOTAL_MEMBERS; i++) {
@@ -137,6 +150,7 @@ public class CouncilElection {
             }
         }
 
+        // Log the results of the proposal
         logger.info("YES votes: " + yesVotes);
         logger.info("NO votes: " + noVotes);
         if (yesVotes >= MAJORITY) {
@@ -147,7 +161,9 @@ public class CouncilElection {
     }
 }
 
+// Class to simulate the behavior of council members
 class MemberBehaviorSimulator {
+    // Simulate behavior based on member ID and mode
     public static void simulateBehavior(int memberId, boolean immediateMode) throws InterruptedException {
         if (!immediateMode) {
             if (memberId == 2) {
@@ -162,9 +178,12 @@ class MemberBehaviorSimulator {
     }
 }
 
+// Class to handle network communication for Paxos protocol
 class PaxosNetworkHandler {
+    // Logger for logging network related information and warnings
     private static final Logger logger = Logger.getLogger(PaxosNetworkHandler.class.getName());
 
+    // Send a prepare request to a member
     public static void sendPrepareRequest(int memberId, int proposalNumber, List<String> promises) throws IOException {
         try (Socket socket = new Socket("localhost", 5000 + memberId);
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
@@ -177,6 +196,7 @@ class PaxosNetworkHandler {
         }
     }
 
+    // Send an accept request to a member
     public static boolean sendAcceptRequest(int memberId, int proposalNumber, String proposalValue) throws IOException {
         try (Socket socket = new Socket("localhost", 5000 + memberId);
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
